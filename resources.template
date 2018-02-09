@@ -1,0 +1,390 @@
+{
+  "AWSTemplateFormatVersion" : "2010-09-09",
+
+  "Description" : "HSAE Alfresco as a Service (AaaS) Resources Template - deploys and manages the shared resources required by the Alfresco Application (RDS, S3)",
+
+  "Parameters" : {
+    "AwsEnv" : {
+      "Description" : "The targeted AWS environment",
+      "Type" : "String",
+      "AllowedValues" : [ "sandbox", "dev", "nonprod", "prod" ],
+      "ConstraintDescription" : "must be sandbox, dev, nonprod, or prod"
+    },
+    "AppEnv" : {
+      "Description" : "The name of the application environment",
+      "Type" : "String",
+      "MinLength" : "1",
+      "MaxLength" : "16",
+      "AllowedPattern": "[a-zA-Z-]*"
+    },
+    "AppName" : {
+      "Description" : "The name of the application",
+      "Type" : "String",
+      "MinLength" : "1",
+      "MaxLength" : "25",
+      "AllowedPattern": "[a-zA-Z0-9\\.-]*"
+    },
+    "AppNameTag" : {
+      "Description" : "The name of the application for the Public Cloud App Context",
+      "Type" : "String",
+      "MinLength" : "1",
+      "MaxLength" : "25",
+      "AllowedPattern": "[a-zA-Z0-9\\.-]*"
+    },
+    "S3Bucket" : {
+      "Description" : "The S3 bucket used for deployment",
+      "Type" : "String",
+      "MinLength" : "1"
+    },
+    "S3BucketPathPrefix" : {
+      "Description" : "The S3 bucket path used for deployment",
+      "Type" : "String",
+      "MinLength" : "1"
+    },
+    "VPC" : {
+      "Description" : "VPC ID",
+      "Type" : "AWS::EC2::VPC::Id"
+    },
+    "AlfrescoSubnetAZa" : {
+      "Description" : "Application subnet ID in AZ a",
+      "Type" : "AWS::EC2::Subnet::Id",
+      "MinLength" : "1"
+    },
+    "AlfrescoSubnetAZb" : {
+      "Description" : "Application subnet ID in AZ b",
+      "Type" : "AWS::EC2::Subnet::Id",
+      "MinLength" : "1"
+    },
+    "DBInstanceSnapshotRestore" : {
+      "Description" : "The name of the DB Snapshot to restore from",
+      "Type" : "String",
+      "Default" : ""
+    },
+    "DBPassword" : {
+      "Description" : "The database admin account password",
+      "Type" : "String",
+      "NoEcho" : "true",
+      "MinLength" : "8",
+      "MaxLength" : "128",
+      "AllowedPattern" : "[a-zA-Z0-9]*",
+      "ConstraintDescription" : "must contain only alphanumeric characters."
+    },
+    "ExistingAlfrescoS3BucketName" : {
+      "Description" : "The name of an existing S3 bucket to be used as the content store for Alfresco. This parameter is optional - if it is not provided, then then a bucket will be created as part of this stack.",
+      "Type" : "String",
+      "Default" : ""
+    },
+    "LookupEnvironmentPropertiesLambdaArn" : {
+      "Description" : "ARN of the Lambda function defined in the master template for looking up environment properties",
+      "Type" : "String"
+    },
+    "DeploySecondDbInstance" : {
+      "Description" : "Specifies whether a second RDS DB instance should be deployed.",
+      "Type" : "String",
+      "AllowedValues" : [ "true", "false" ],
+      "ConstraintDescription" : "must be true or false"
+    }
+  },
+
+  "Conditions" : {
+    "RdsMultiAZ" : { "Fn::Equals" : [ { "Ref" : "AppEnv" }, "prod" ]},
+    "CreateAlfrescoS3Bucket" : { "Fn::Equals" : [{ "Ref" : "ExistingAlfrescoS3BucketName" }, "" ]},
+    "DBSnapshotExists" : {"Fn::Not" : [{"Fn::Equals" : [{ "Ref" : "DBInstanceSnapshotRestore" }, "" ]} ]} ,
+    "DeploySecondDbInstance" : { "Fn::Equals" : [{ "Ref" : "DeploySecondDbInstance" }, "true" ]}
+  },
+
+  "Resources" : {
+    "DBSubnetGroup" : {
+      "Type" : "AWS::RDS::DBSubnetGroup",
+      "Properties" : {
+        "DBSubnetGroupDescription" : "Subnets available for the RDS DB Instance",
+        "SubnetIds" : [
+          { "Ref" : "AlfrescoSubnetAZa" },
+          { "Ref" : "AlfrescoSubnetAZb" }
+        ],
+		"Tags" : [
+		  { "Key" : "Name", "Value" : { "Fn::Join" : [ "-", [ { "Ref" : "AppName" }, { "Ref" : "AwsEnv" }, "stack" ]] } },
+		  { "Key" : "lm_app", "Value" : { "Ref" : "AppName" } },
+		  { "Key" : "lm_app_env", "Value" : { "Ref" : "AwsEnv" } },
+		  { "Key" : "lm_sbu", "Value" : { "Fn::GetAtt" : [ "MiscProps", "misc.support_market" ] } }
+		]
+      }
+    },
+
+    "AlfrescoRDSSG" : {
+      "Type" : "AWS::EC2::SecurityGroup",
+      "Properties" : {
+        "GroupDescription" : {
+          "Fn::Join" : [ " ", [{ "Ref" : "AppName" }, { "Ref" : "AppEnv" }, "DB security group" ]]
+        },
+        "VpcId" : { "Ref" : "VPC"},
+        "Tags" : [
+            { "Key" : "Name", "Value": { "Fn::Join" : [ "-", [{ "Ref" : "AppName" }, { "Ref" : "AppEnv" }, "db" ]]}},
+            { "Key" : "lm_app", "Value": { "Ref" : "AppNameTag" }},
+            { "Key" : "lm_applicationsupportemail", "Value": { "Fn::GetAtt" : [ "MiscProps", "misc.support_email" ] }},
+            { "Key" : "lm_sbu", "Value": { "Fn::GetAtt" : [ "MiscProps", "misc.support_market" ] }},
+            { "Key" : "lm_app_env", "Value": { "Ref" : "AppEnv" }}
+          ]
+      }
+    },
+
+
+    "DBClusterParameterGroup" : {
+      "Type" : "AWS::RDS::DBClusterParameterGroup",
+      "Properties" : {
+        "Description" : "Alfresco Aurora/MySQL5.6 Cluster Parameter Group",
+        "Family" : "aurora5.6",
+        "Parameters" : {
+          "character_set_database" 	: "utf8",
+          "lower_case_table_names" 	: "1"
+        },
+        "Tags" : [
+            { "Key" : "Name", "Value": { "Fn::Join" : [ "-", [{ "Ref" : "AppName" }, { "Ref" : "AppEnv" }, "mysql5.6" ]]}},
+            { "Key" : "lm_app", "Value": { "Ref" : "AppNameTag" }},
+            { "Key" : "lm_applicationsupportemail", "Value": { "Fn::GetAtt" : [ "MiscProps", "misc.support_email" ] }},
+            { "Key" : "lm_sbu", "Value": { "Fn::GetAtt" : [ "MiscProps", "misc.support_market" ] }},
+            { "Key" : "lm_app_env", "Value": { "Ref" : "AppEnv" }}
+          ]
+      }
+
+    },
+
+    "AlfrescoDBCluster" : {
+      "Type" : "AWS::RDS::DBCluster",
+      "DeletionPolicy" : "Snapshot",
+      "Properties" : {
+        "Engine" : "aurora",
+        "EngineVersion" : "5.6.10a",
+        "PreferredMaintenanceWindow" : "sun:20:00-sun:21:00",
+        "PreferredBackupWindow" : "01:00-02:00",
+        "BackupRetentionPeriod" : "14",
+        "MasterUsername" : {
+            "Fn::If" : [
+               "DBSnapshotExists",
+               {"Ref" : "AWS::NoValue"},
+               { "Fn::GetAtt" : [ "DbProps", "db.master_username" ] }
+             ]
+           },
+        "MasterUserPassword" : {
+            "Fn::If" : [
+               "DBSnapshotExists",
+               {"Ref" : "AWS::NoValue"},
+               {"Ref" : "DBPassword"}
+             ]
+           },
+        "DBSubnetGroupName" : { "Ref" : "DBSubnetGroup" },
+        "DBClusterParameterGroupName" : { "Ref" : "DBClusterParameterGroup" },
+        "SnapshotIdentifier" : {
+             "Fn::If" : [
+                "DBSnapshotExists",
+                 {"Ref" : "DBInstanceSnapshotRestore" },
+                 {"Ref" : "AWS::NoValue"}
+              ]
+            },
+        "StorageEncrypted" : "true",
+        "KmsKeyId" : {
+             "Fn::If" : [
+                "DBSnapshotExists",
+                { "Fn::GetAtt" : [ "DbProps", "db.snapshot_restore_kms_key" ] },
+                 {"Ref" : "AWS::NoValue"}
+              ]
+            },
+        "VpcSecurityGroupIds" : [
+          { "Ref" : "AlfrescoRDSSG" }
+        ],
+        "Tags" : [
+            { "Key" : "Name", "Value": { "Fn::Join" : [ "-", [{ "Ref" : "AppName" }, { "Ref" : "AppEnv" }, "cluster" ]]}},
+            { "Key" : "lm_app", "Value": { "Ref" : "AppNameTag" }},
+            { "Key" : "lm_troux_uid", "Value": { "Fn::GetAtt" : [ "MiscProps", "misc.troux_uid" ] }},
+            { "Key" : "lm_applicationsupportemail", "Value": { "Fn::GetAtt" : [ "MiscProps", "misc.support_email" ] }},
+            { "Key" : "lm_sbu", "Value": { "Fn::GetAtt" : [ "MiscProps", "misc.support_market" ] }},
+            { "Key" : "lm_app_env", "Value": { "Ref" : "AppEnv" }}
+          ]
+      }
+    },
+
+
+    "AlfrescoDBInstance1" : {
+      "Type" : "AWS::RDS::DBInstance",
+      "DeletionPolicy": "Delete",
+      "Properties" : {
+        "DBInstanceClass" : { "Fn::GetAtt" : [ "DbProps", "db.instance1_type" ] },
+        "DBClusterIdentifier" : { "Ref" : "AlfrescoDBCluster" },
+        "Engine" : "aurora",
+        "EngineVersion" : "5.6.10a",
+        "PubliclyAccessible" : "false",
+        "AutoMinorVersionUpgrade" : "true",
+        "AllowMajorVersionUpgrade" : "false",
+        "Tags" : [
+            { "Key" : "Name", "Value": { "Fn::Join" : [ "-", [{ "Ref" : "AppName" }, { "Ref" : "AppEnv" }, "db" ]]}},
+            { "Key" : "lm_app", "Value": { "Ref" : "AppNameTag" }},
+            { "Key" : "lm_troux_uid", "Value": { "Fn::GetAtt" : [ "MiscProps", "misc.troux_uid" ] }},
+            { "Key" : "lm_applicationsupportemail", "Value": { "Fn::GetAtt" : [ "MiscProps", "misc.support_email" ] }},
+            { "Key" : "lm_sbu", "Value": { "Fn::GetAtt" : [ "MiscProps", "misc.support_market" ] }},
+            { "Key" : "lm_app_env", "Value": { "Ref" : "AppEnv" }}
+          ]
+      }
+    },
+
+    "AlfrescoDBInstance2" : {
+      "Type" : "AWS::RDS::DBInstance",
+      "Condition" : "DeploySecondDbInstance",
+      "DeletionPolicy": "Delete",
+      "Properties" : {
+        "DBInstanceClass" : { "Fn::GetAtt" : [ "DbProps", "db.instance2_type" ] },
+        "DBClusterIdentifier" : { "Ref" : "AlfrescoDBCluster" },
+        "Engine" : "aurora",
+        "EngineVersion" : "5.6.10a",
+        "PubliclyAccessible" : "false",
+        "AutoMinorVersionUpgrade" : "true",
+        "AllowMajorVersionUpgrade" : "false",
+        "Tags" : [
+            { "Key" : "Name", "Value": { "Fn::Join" : [ "-", [{ "Ref" : "AppName" }, { "Ref" : "AppEnv" }, "db" ]]}},
+            { "Key" : "lm_app", "Value": { "Ref" : "AppNameTag" }},
+            { "Key" : "lm_troux_uid", "Value": { "Fn::GetAtt" : [ "MiscProps", "misc.troux_uid" ] }},
+            { "Key" : "lm_applicationsupportemail", "Value": { "Fn::GetAtt" : [ "MiscProps", "misc.support_email" ] }},
+            { "Key" : "lm_sbu", "Value": { "Fn::GetAtt" : [ "MiscProps", "misc.support_market" ] }},
+            { "Key" : "lm_app_env", "Value": { "Ref" : "AppEnv" }}
+          ]
+      }
+    },
+
+    "AlfrescoDBInstance1HighCpuAlarm": {
+      "Type": "AWS::CloudWatch::Alarm",
+      "Properties": {
+        "AlarmDescription": "Detect if CPU > 80% for 10 minutes",
+        "Namespace": "AWS/RDS",
+        "MetricName": "CPUUtilization",
+        "EvaluationPeriods": "2",
+        "Statistic": "Average",
+        "Threshold": "80",
+        "ComparisonOperator": "GreaterThanThreshold",
+        "Period": "300",
+        "AlarmActions": [ { "Ref": "AlfrescoRdsNotificationTopic" } ],
+        "Dimensions": [
+          {
+            "Name": "DBInstanceIdentifier",
+            "Value": { "Ref": "AlfrescoDBInstance1" }
+          }
+        ]
+      }
+    },
+
+    "AlfrescoRdsNotificationTopic": {
+      "Type": "AWS::SNS::Topic",
+      "Properties": {
+        "DisplayName" : { "Fn::Join" : [" ", ["Alfresco RDS Notification - ", { "Ref" : "AppName" }, { "Ref" : "AppEnv" } , { "Ref" : "AWS::Region" } ]]},
+        "Subscription": [ { "Endpoint": { "Fn::GetAtt" : [ "MiscProps", "misc.support_email" ] }, "Protocol": "email" } ]
+      }
+    },
+
+    "AlfrescoS3Bucket" : {
+      "Type" : "AWS::S3::Bucket",
+      "Condition" : "CreateAlfrescoS3Bucket",
+      "DeletionPolicy" : "Delete",
+      "Properties" : {
+        "AccessControl" : "Private",
+        "BucketName" : { "Fn::Join" : [ "-", [ { "Ref" : "AppEnv" }, { "Ref" : "AppName" }, { "Ref" : "AWS::Region" } ]]},
+        "LifecycleConfiguration": {
+          "Rules" : [
+            {
+              "Prefix" : "backups",
+              "Status" : { "Fn::GetAtt" : [ "AlfrescoS3Props", "alfresco_s3_bucket.expire_backups" ] },
+              "ExpirationInDays" : { "Fn::GetAtt" : [ "AlfrescoS3Props", "alfresco_s3_bucket.expire_backups_after_days" ] }
+            }
+          ]
+        },
+        "LoggingConfiguration" : {
+          "DestinationBucketName" : { "Fn::Join" : [ "-", [ "sanotsh-s3-access-logs", { "Ref" : "AWS::AccountId" }, { "Ref" : "AWS::Region" }]]},
+          "LogFilePrefix" : { "Fn::Join" : [ "/", [{ "Ref" : "AppName" }, { "Ref" : "AppEnv" }]]}
+        },
+        "Tags" : [
+            { "Key" : "Name", "Value": { "Fn::Join" : [ "-", [{ "Ref" : "AppName" }, { "Ref" : "AppEnv" }, "bucket" ]]}},
+            { "Key" : "lm_app", "Value": { "Ref" : "AppNameTag" }},
+            { "Key" : "lm_troux_uid", "Value": { "Fn::GetAtt" : [ "MiscProps", "misc.troux_uid" ] }},
+            { "Key" : "lm_applicationsupportemail", "Value": { "Fn::GetAtt" : [ "MiscProps", "misc.support_email" ] }},
+            { "Key" : "lm_sbu", "Value": { "Fn::GetAtt" : [ "MiscProps", "misc.support_market" ] }},
+            { "Key" : "lm_app_env", "Value": { "Ref" : "AppEnv" }}
+          ]
+      }
+    },
+
+    "MiscProps" : {
+      "Type" : "Custom::PropertiesLookup",
+      "Properties" : {
+        "ServiceToken" : { "Ref" : "LookupEnvironmentPropertiesLambdaArn" },
+        "PropertyPrefix" : "misc",
+        "PropertyFileS3Bucket" : { "Ref" : "S3Bucket" },
+        "HsaeDefaultPropertyFileKey" : { "Fn::Join" : [ "", [ { "Ref" : "S3BucketPathPrefix" }, "/aaas-base/config/default.properties" ] ] },
+        "MarketDefaultPropertyFileKey" : { "Fn::Join" : [ "", [ { "Ref" : "S3BucketPathPrefix" }, "/config/default.properties" ] ] },
+        "EnvironmentPropertyFileKey" : { "Fn::Join" : [ "", [ { "Ref" : "S3BucketPathPrefix" }, "/config/", { "Ref" : "AppEnv" }, "-", { "Ref" : "AWS::Region" }, ".properties" ] ] }
+      }
+    },
+
+    "DbProps" : {
+      "Type" : "Custom::PropertiesLookup",
+      "Properties" : {
+        "ServiceToken" : { "Ref" : "LookupEnvironmentPropertiesLambdaArn" },
+        "PropertyPrefix" : "db",
+        "PropertyFileS3Bucket" : { "Ref" : "S3Bucket" },
+        "HsaeDefaultPropertyFileKey" : { "Fn::Join" : [ "", [ { "Ref" : "S3BucketPathPrefix" }, "/aaas-base/config/default.properties" ] ] },
+        "MarketDefaultPropertyFileKey" : { "Fn::Join" : [ "", [ { "Ref" : "S3BucketPathPrefix" }, "/config/default.properties" ] ] },
+        "EnvironmentPropertyFileKey" : { "Fn::Join" : [ "", [ { "Ref" : "S3BucketPathPrefix" }, "/config/", { "Ref" : "AppEnv" }, "-", { "Ref" : "AWS::Region" }, ".properties" ] ] }
+      }
+    },
+
+    "AlfrescoS3Props" : {
+      "Type" : "Custom::PropertiesLookup",
+      "Properties" : {
+        "ServiceToken" : { "Ref" : "LookupEnvironmentPropertiesLambdaArn" },
+        "PropertyPrefix" : "alfresco_s3_bucket",
+        "PropertyFileS3Bucket" : { "Ref" : "S3Bucket" },
+        "HsaeDefaultPropertyFileKey" : { "Fn::Join" : [ "", [ { "Ref" : "S3BucketPathPrefix" }, "/aaas-base/config/default.properties" ] ] },
+        "MarketDefaultPropertyFileKey" : { "Fn::Join" : [ "", [ { "Ref" : "S3BucketPathPrefix" }, "/config/default.properties" ] ] },
+        "EnvironmentPropertyFileKey" : { "Fn::Join" : [ "", [ { "Ref" : "S3BucketPathPrefix" }, "/config/", { "Ref" : "AppEnv" }, "-", { "Ref" : "AWS::Region" }, ".properties" ] ] }
+      }
+    }
+  },
+
+  "Outputs" : {
+    "AlfrescoAuroraCluster" : {
+      "Description" : "Aurora Cluster Name",
+      "Value" : { "Fn::GetAtt" : [ "AlfrescoDBCluster", "Endpoint.Address" ] }
+    },
+    "AlfrescoAuroraClusterPort" : {
+      "Description" : "Aurora Cluster Port",
+      "Value" : { "Fn::GetAtt" : [ "AlfrescoDBCluster", "Endpoint.Port" ] }
+    },
+    "AlfrescoDBHost1" : {
+      "Description" : "Aurora Cluster Host 1 Name",
+      "Value" : { "Fn::GetAtt" : [ "AlfrescoDBInstance1", "Endpoint.Address" ] }
+    },
+    "AlfrescoDBPort1" : {
+      "Description" : "Aurora Cluster Host 1 Port Number",
+      "Value" : { "Fn::GetAtt" : [ "AlfrescoDBInstance1", "Endpoint.Port" ] }
+    },
+    "AlfrescoDBHost2" : {
+      "Condition" : "DeploySecondDbInstance",
+      "Description" : "Aurora Cluster Host 2 Name",
+      "Value" : { "Fn::GetAtt" : [ "AlfrescoDBInstance2", "Endpoint.Address" ] }
+    },
+    "AlfrescoDBPort2" : {
+      "Condition" : "DeploySecondDbInstance",
+      "Description" : "Aurora Cluster Host 2 Port Number",
+      "Value" : { "Fn::GetAtt" : [ "AlfrescoDBInstance2", "Endpoint.Port" ] }
+    },
+    "AlfrescoS3Bucket" : {
+      "Description" : "Alfresco S3 Bucket Name",
+      "Value" : {
+        "Fn::If" : [
+          "CreateAlfrescoS3Bucket",
+          { "Ref" : "AlfrescoS3Bucket" },
+          { "Ref" : "ExistingAlfrescoS3BucketName" }
+        ]}
+    },
+    "AlfrescoRDSSG" : {
+      "Description" : "RDS Security Group",
+      "Value" : { "Fn::GetAtt" : [ "AlfrescoRDSSG", "GroupId" ]}
+    }
+  }
+}

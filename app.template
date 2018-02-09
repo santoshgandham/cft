@@ -1,0 +1,1136 @@
+{
+  "AWSTemplateFormatVersion" : "2010-09-09",
+
+  "Description" : "HSAE Alfresco as a Service (AaaS) App Template - deploys and manages alfresco application and infrastructure (ELB, Auto Scaling Group, Security Groups)",
+
+  "Parameters" : {
+    "AMI" : {
+      "Description" : "AMI to use for deployment",
+      "Type" : "String",
+      "MinLength" : "1"
+    },
+    "AlfrescoInstanceProfile" : {
+      "Description" : "Instance Profile for Launch Configuration",
+      "Type" : "String",
+      "MinLength" : "1"
+    },
+    "InstanceProfileRole" : {
+      "Description" : "Instance Profile Role for Launch Configuration",
+      "Type" : "String",
+      "MinLength" : "1"
+    },
+    "AwsEnv" : {
+      "Description" : "The targeted AWS environment",
+      "Type" : "String",
+      "AllowedValues" : [ "sandbox", "dev", "nonprod", "prod" ],
+      "ConstraintDescription" : "must be sandbox, dev, nonprod, or prod"
+    },
+    "AlfrescoIngestServer" : {
+      "Description" : "Include an Alfresco Ingestion Server?",
+      "Type" : "String",
+      "AllowedValues" : ["true", "false"],
+      "Default" : "false"
+    },
+    "AppEnv" : {
+      "Description" : "The name of the application environment",
+      "Type" : "String",
+      "MinLength" : "1",
+      "MaxLength" : "16",
+      "AllowedPattern": "[a-zA-Z-]*"
+    },
+    "AppName" : {
+      "Description" : "The name of the application",
+      "Type" : "String",
+      "MinLength" : "1",
+      "MaxLength" : "25",
+      "AllowedPattern": "[a-zA-Z0-9\\.-]*"
+    },
+    "AppNameTag" : {
+      "Description" : "The name of the application in the public cloud portal",
+      "Type" : "String",
+      "MinLength" : "1",
+      "MaxLength" : "25",
+      "AllowedPattern": "[a-zA-Z0-9\\.-]*"
+    },
+    "KeyName": {
+      "Description" : "Name of an existing EC2 KeyPair to enable SSH access to the instances (optional)",
+      "Type": "AWS::EC2::KeyPair::KeyName"
+    },
+    "NewRelicAppName" : {
+      "Description" : "The name of the application as displayed in NewRelic",
+      "Type" : "String",
+      "MaxLength" : "50",
+      "AllowedPattern": "[a-zA-Z0-9 \\().-]*"
+	  },
+    "AppVersion" : {
+      "Description" : "The version of the application",
+      "Type" : "String",
+      "MinLength" : "1"
+    },
+    "LicenseS3Bucket" : {
+      "Description" : "The S3 bucket containing the Alfresco license file(s)",
+      "Type" : "String",
+      "MinLength" : "1"
+    },
+    "S3Bucket" : {
+      "Description" : "The S3 bucket used for deployment",
+      "Type" : "String",
+      "MinLength" : "1"
+    },
+    "S3BucketPathPrefix" : {
+      "Description" : "The S3 bucket path used for deployment",
+      "Type" : "String",
+      "MinLength" : "1"
+    },
+    "VPC" : {
+      "Description" : "VPC ID",
+      "Type" : "AWS::EC2::VPC::Id"
+    },
+    "AlfrescoSubnetAZa" : {
+      "Description" : "Application subnet ID in AZ a",
+      "Type" : "AWS::EC2::Subnet::Id",
+      "MinLength" : "1"
+    },
+    "AlfrescoSubnetAZb" : {
+      "Description" : "Application subnet ID in AZ b",
+      "Type" : "AWS::EC2::Subnet::Id",
+      "MinLength" : "1"
+    },
+    "ELBSubnetAZa" : {
+      "Description" : "ELB subnet ID in AZ a",
+      "Type" : "AWS::EC2::Subnet::Id",
+      "MinLength" : "1"
+    },
+    "ELBSubnetAZb" : {
+      "Description" : "ELB subnet ID in AZ b",
+      "Type" : "AWS::EC2::Subnet::Id",
+      "MinLength" : "1"
+    },
+    "AlfrescoS3Bucket" : {
+      "Description" : "Alfresco application S3 bucket",
+      "Type" : "String",
+      "MinLength" : "1"
+    },
+    "DBHost" : {
+      "Description" : "Host Name of database instance",
+      "Type" : "String",
+      "MinLength" : "1"
+    },
+    "DBPort" : {
+      "Description" : "Port number for database instance",
+      "Type" : "String",
+      "MinLength" : "1"
+    },
+    "DBMasterPassword" : {
+      "Description" : "Password for Master/Admin DB User",
+      "Type" : "String",
+      "NoEcho" : "true",
+      "MinLength" : "1"
+    },
+    "DBAlfrescoPassword" : {
+      "Description" : "Password for Alfresco DB User",
+      "Type" : "String",
+      "NoEcho" : "true",
+      "MinLength" : "1"
+    },
+    "AlfrescoAdminPassword" : {
+      "Description" : "Password for Alfresco admin account",
+      "Type" : "String",
+      "NoEcho" : "true",
+      "MinLength" : "1"
+    },
+    "AlfrescoRDSSG" : {
+      "Description" : "RDS Security Group",
+      "Type" : "AWS::EC2::SecurityGroup::Id",
+      "MinLength" : "1"
+    },
+    "KeystorePassword" : {
+      "Description" : "SSL Keystore password",
+      "Type" : "String",
+      "NoEcho" : "true"
+    },
+    "IsDeveloperDeploy" : {
+      "Description" : "Indicates if this is a deployment to a developer specific stack",
+      "Type" : "String",
+      "AllowedValues" : [ "true", "false" ],
+      "ConstraintDescription" : "must be true or false"
+    },
+    "AlfrescoUrl" : {
+      "Description" : "Custom URL of Alfresco.  Example: customurl.aws.sanotsh.com",
+      "Type" : "String",
+      "AllowedPattern" : "[a-zA-Z0-9-_]*",
+      "ConstraintDescription" : "Must be a string free of spaces, periods, etc."
+    },
+    "AlfrescoOpenPort" : {
+      "Description" : "Port to open on the app instances going through the ELB other than the standard HTTPS port.  Leave blank to disable.",
+      "Type" : "Number",
+      "Default" : "0"
+    },
+    "UseStickySessionOnAlfrescoRepoElb" : {
+      "Description" : "Indicates if sticky sessions should be enabled on the Alfresco Repo ELB",
+      "Type" : "String",
+      "AllowedValues" : [ "true", "false" ],
+      "ConstraintDescription" : "must be true or false"
+    },
+    "UserAccessKey" : {
+      "Description" : "Access Key of the IAM User which has been created to access the Alfresco S3 bucket",
+      "Type" : "String",
+      "NoEcho" : "true"
+    },
+    "UserSecretKey" : {
+      "Description" : "Secret Key of the IAM User which has been created to access the Alfresco S3 bucket",
+      "Type" : "String",
+      "NoEcho" : "true"
+    },
+    "LookupEnvironmentPropertiesLambdaArn" : {
+      "Description" : "ARN of the Lambda function defined in the master template for looking up environment properties",
+      "Type" : "String"
+    }
+  },
+
+
+  "Conditions" : {
+    "NoOpenPort"        : { "Fn::Equals" : [{ "Ref" : "AlfrescoOpenPort" }, "0" ]},
+    "NoKeyName"         : { "Fn::Equals" : [{ "Ref" : "KeyName" }, "" ]},
+    "AwsEnvProd"		: { "Fn::Equals" : [{ "Ref" : "AwsEnv" }, "prod" ]},
+    "AwsEnvNonProd"     : { "Fn::Equals" : [{ "Ref" : "AwsEnv" }, "nonprod" ]},
+ 	  "AwsEnvSandbox"		: { "Fn::Equals" : [{ "Ref" : "AwsEnv" }, "sandbox" ]},
+    "AwsEnvDev"		    : { "Fn::Equals" : [{ "Ref" : "AwsEnv" }, "dev" ]},
+   	"NotAwsEnvSandbox"	: { "Fn::Not" : [{ "Fn::Equals" : [{ "Ref": "AwsEnv" }, "sandbox" ]}]},
+  	"AwsRegionUsEast1"	: { "Fn::Equals" : [{ "Ref" : "AWS::Region" }, "us-east-1" ]},
+    "AwsEnvSanboxOrDev" : { "Fn::Or" : [{ "Condition" : "AwsEnvSandbox" }, { "Condition" : "AwsEnvDev" } ]},
+    "AwsRegionUsEast1Prod" : { "Fn::And" : [{ "Condition" : "AwsRegionUsEast1" }, { "Condition" : "AwsEnvProd" } ]},
+    "UseDNS" : { "Fn::Equals" : [{ "Ref": "IsDeveloperDeploy" }, "false" ]},
+    "UseStickySessionOnAlfrescoRepoElb" : { "Fn::Equals" : [{ "Ref" : "UseStickySessionOnAlfrescoRepoElb" }, "true" ]},
+    "IsIngestServer" : { "Fn::Equals" : [{ "Ref" : "AlfrescoIngestServer" }, "true" ]}
+  },
+
+  "Resources" : {
+
+    "AlfrescoShareLoadBalancer" : {
+      "Type" : "AWS::ElasticLoadBalancing::LoadBalancer",
+      "Properties" : {
+        "Scheme" : "internal",
+        "SecurityGroups" : [
+          { "Ref" : "AlfrescoELBSG" }
+        ],
+        "Subnets" : [
+          { "Ref" : "ELBSubnetAZa" },
+          { "Ref" : "ELBSubnetAZb" }
+        ],
+        "AppCookieStickinessPolicy" : [ {
+          "PolicyName" : "AlfrescoShareELBPolicy",
+          "CookieName" : "jsessionid"
+          }
+        ],
+        "AccessLoggingPolicy" : {
+          "EmitInterval" : "60",
+          "Enabled" : "true",
+          "S3BucketName" : { "Fn::Join" : [ "-", [ "sanotsh-elb-access-logs", { "Ref" : "AWS::AccountId" }, { "Ref" : "AWS::Region" }]]},
+          "S3BucketPrefix" : { "Fn::Join" : [ "/", [{ "Ref" : "AppName" }, { "Ref" : "AppEnv" }]]}
+        },
+  		  "Policies" : [{
+  	      "PolicyName" : "ELBSecurityPolicy",
+  	      "PolicyType" : "SSLNegotiationPolicyType",
+  	      "Attributes" : [{
+  	        "Name"  : "Reference-Security-Policy",
+  	        "Value" : "ELBSecurityPolicy-2016-08"
+
+  	      }]
+  	    }],
+        "Listeners" : [
+          {
+            "LoadBalancerPort" : "443",
+            "Protocol" : "HTTPS",
+            "InstancePort" : "8444",
+            "InstanceProtocol" : "HTTPS",
+            "SSLCertificateId" : { "Fn::Join" : [ "", [ "arn:aws:iam::", { "Ref" : "AWS::AccountId" }, ":server-certificate/", { "Ref" : "AppNameTag" }, "/", { "Ref" : "AlfrescoUrl"}, "-share.aws.sanotsh.com" ]]},
+            "PolicyNames" : [ "AlfrescoShareELBPolicy", "ELBSecurityPolicy" ]
+          }
+        ],
+        "HealthCheck" : {
+          "Target" : { "Fn::GetAtt" : [ "AlfrescoShareElbProps", "alfresco_share_elb.health_check.target" ] },
+	        "HealthyThreshold" : { "Fn::GetAtt" : [ "AlfrescoShareElbProps", "alfresco_share_elb.health_check.healthy_threshold" ] },
+		      "UnhealthyThreshold" : { "Fn::GetAtt" : [ "AlfrescoShareElbProps", "alfresco_share_elb.health_check.unhealthy_threshold" ] },
+	        "Interval" : { "Fn::GetAtt" : [ "AlfrescoShareElbProps", "alfresco_share_elb.health_check.interval" ] },
+		      "Timeout" : { "Fn::GetAtt" : [ "AlfrescoShareElbProps", "alfresco_share_elb.health_check.timeout" ] }
+        },
+        "ConnectionDrainingPolicy" : {
+          "Enabled" : "true",
+          "Timeout" : "60"
+        },
+		"ConnectionSettings": {
+          "IdleTimeout" : { "Fn::GetAtt" : [ "AlfrescoShareElbProps", "alfresco_share_elb.idle_timeout" ] }
+        },
+        "CrossZone" : "true",
+        "Tags" : [
+          { "Key" : "lm_app", "Value": { "Ref" : "AppNameTag" } },
+          { "Key" : "lm_applicationsupportemail", "Value": { "Fn::GetAtt" : [ "MiscProps", "misc.support_email" ] } },
+          { "Key" : "lm_sbu", "Value": { "Fn::GetAtt" : [ "MiscProps", "misc.support_market" ] } },
+          { "Key" : "lm_app_env", "Value": { "Ref" : "AppEnv" } }
+        ]
+      }
+    },
+
+
+    "AlfrescoLoadBalancer" : {
+      "Type" : "AWS::ElasticLoadBalancing::LoadBalancer",
+      "Properties" : {
+        "Scheme" : "internal",
+        "SecurityGroups" : [
+          { "Ref" : "AlfrescoELBSG" }
+        ],
+        "Subnets" : [
+          { "Ref" : "ELBSubnetAZa" },
+          { "Ref" : "ELBSubnetAZb" }
+        ],
+        "AppCookieStickinessPolicy" : [ {
+          "PolicyName" : "AlfrescoELBPolicy",
+          "CookieName" : "jsessionid"
+          }
+        ],
+        "AccessLoggingPolicy" : {
+          "EmitInterval" : "60",
+          "Enabled" : "true",
+          "S3BucketName" : { "Fn::Join" : [ "-", [ "sanotsh-elb-access-logs", { "Ref" : "AWS::AccountId" }, { "Ref" : "AWS::Region" }]]},
+          "S3BucketPrefix" : { "Fn::Join" : [ "/", [{ "Ref" : "AppName" }, { "Ref" : "AppEnv" }]]}
+        },
+  		  "Policies" : [{
+  	      "PolicyName" : "ELBSecurityPolicy",
+  	      "PolicyType" : "SSLNegotiationPolicyType",
+  	      "Attributes" : [{
+  	        "Name"  : "Reference-Security-Policy",
+  	        "Value" : "ELBSecurityPolicy-2016-08"
+
+  	      }]
+  	    }],
+        "Listeners" : [
+          {
+            "LoadBalancerPort" : "443",
+            "Protocol" : "HTTPS",
+            "InstancePort" : "8443",
+            "InstanceProtocol" : "HTTPS",
+            "SSLCertificateId" : { "Fn::Join" : [ "", [ "arn:aws:iam::", { "Ref" : "AWS::AccountId" }, ":server-certificate/", { "Ref" : "AppNameTag" }, "/", { "Ref" : "AlfrescoUrl"}, ".aws.sanotsh.com" ]]},
+            "PolicyNames" : [ "ELBSecurityPolicy", { "Fn::If" : [ "UseStickySessionOnAlfrescoRepoElb", "AlfrescoELBPolicy", { "Ref" : "AWS::NoValue" }]} ]
+          },
+          {
+            "Fn::If" : [
+               "NoOpenPort",
+               {"Ref" : "AWS::NoValue"},
+               {
+                 "LoadBalancerPort" : { "Ref" : "AlfrescoOpenPort" },
+                 "Protocol" : "TCP",
+                 "InstancePort" : { "Ref" : "AlfrescoOpenPort" },
+                 "InstanceProtocol" : "TCP"
+               }
+             ]
+           }
+        ],
+        "HealthCheck" : {
+          "Target" : { "Fn::GetAtt" : [ "AlfrescoRepoElbProps", "alfresco_repo_elb.health_check.target" ] },
+		      "HealthyThreshold" : { "Fn::GetAtt" : [ "AlfrescoRepoElbProps", "alfresco_repo_elb.health_check.healthy_threshold" ] },
+		      "UnhealthyThreshold" : { "Fn::GetAtt" : [ "AlfrescoRepoElbProps", "alfresco_repo_elb.health_check.unhealthy_threshold" ] },
+		      "Interval" : { "Fn::GetAtt" : [ "AlfrescoRepoElbProps", "alfresco_repo_elb.health_check.interval" ] },
+		      "Timeout" : { "Fn::GetAtt" : [ "AlfrescoRepoElbProps", "alfresco_repo_elb.health_check.timeout" ] }
+        },
+        "ConnectionDrainingPolicy" : {
+          "Enabled" : "true",
+          "Timeout" : "60"
+        },
+		    "ConnectionSettings": {
+          "IdleTimeout" : { "Fn::GetAtt" : [ "AlfrescoRepoElbProps", "alfresco_repo_elb.idle_timeout" ] }
+        },
+        "CrossZone" : "true",
+        "Tags" : [
+          { "Key" : "lm_app", "Value": { "Ref" : "AppNameTag" } },
+          { "Key" : "lm_applicationsupportemail", "Value": { "Fn::GetAtt" : [ "MiscProps", "misc.support_email" ] } },
+          { "Key" : "lm_sbu", "Value": { "Fn::GetAtt" : [ "MiscProps", "misc.support_market" ] } },
+          { "Key" : "lm_app_env", "Value": { "Ref" : "AppEnv" } }
+        ]
+      }
+    },
+
+    "AlfrescoLaunchConfiguration" : {
+      "Type" : "AWS::AutoScaling::LaunchConfiguration",
+      "Properties" : {
+        "SecurityGroups" : [
+          { "Ref" : "AlfrescoAppSG" }
+        ],
+        "InstanceType" : { "Fn::If" : [ "IsIngestServer", { "Fn::GetAtt" : [ "IngestProps", "alfresco_ingest.instance_type" ] }, { "Fn::GetAtt" : [ "AlfrescoInstanceProps", "alfresco_instance.instance_type" ] } ] },
+        "IamInstanceProfile" : { "Ref": "AlfrescoInstanceProfile" },
+        "KeyName" : { "Fn::If" : [ "NoKeyName", { "Ref" : "AWS::NoValue" }, { "Ref" : "KeyName" } ]},
+        "ImageId" : { "Ref" : "AMI" },
+        "BlockDeviceMappings" : [
+          {
+            "DeviceName" : "/dev/sda1",
+            "Ebs" : {
+              "VolumeSize" : { "Fn::If" : [ "IsIngestServer", { "Fn::GetAtt" : [ "IngestProps", "alfresco_ingest.ebs.root_volume.size" ] },{ "Fn::GetAtt" : [ "AlfrescoInstanceProps", "alfresco_instance.ebs.root_volume.size" ] } ] },
+              "VolumeType" : "gp2",
+              "DeleteOnTermination" : "true"
+            }
+          },
+          {
+            "DeviceName" : "/dev/sdj",
+            "Ebs" : {
+              "VolumeSize" : { "Fn::If" : [ "IsIngestServer", { "Fn::GetAtt" : [ "IngestProps", "alfresco_ingest.ebs.alfresco_volume.size" ] },{ "Fn::GetAtt" : [ "AlfrescoInstanceProps", "alfresco_instance.ebs.alfresco_volume.size" ] } ] },
+              "VolumeType" : "gp2",
+              "DeleteOnTermination" : "true"
+            }
+          },
+          {
+            "DeviceName" : "/dev/sdk",
+            "Ebs" : {
+              "VolumeSize" : { "Fn::If" : [ "IsIngestServer", { "Fn::GetAtt" : [ "IngestProps", "alfresco_ingest.ebs.alf_data_volume.size" ] },{ "Fn::GetAtt" : [ "AlfrescoInstanceProps", "alfresco_instance.ebs.alf_data_volume.size" ] } ] },
+              "VolumeType" : "gp2",
+              "DeleteOnTermination" : "true"
+            }
+          }
+        ],
+        "UserData" : { "Fn::Base64" : { "Fn::Join" : [ "", [
+          "#!/bin/bash -v\n",
+          "exec &> /var/log/userdata.log\n",
+          "## The following comment line is used to force an update to UserData on each application release\n",
+          "## This forces the UpdatePolicy to trigger a new EC2 instances to be brought online with the new configuration\n",
+          "# AppName-Release: ", { "Ref" : "AppName" }, "-", { "Ref" : "AppVersion" }, "\n",
+
+          "# Expand Alfresco FS to consume entire Volume\n",
+          "resize2fs /dev/xvdj\n",
+          "resize2fs /dev/xvdk\n",
+          "fdisk -l; df -h\n",
+
+       	  "# During Initial Stack Creation Only: Pause for 5 minutes in any AZ other than A to avoid Schema update collisions\n",
+          "# TODO: The following assumes you'll always have an AZ A - which isn't the case. this needs to be generic to AZ 1 or 2 vs A or B \n",
+          "az=$(curl -s http://169.254.169.254/latest/meta-data/placement/availability-zone)\n",
+          "state=$(/usr/local/bin/aws cloudformation describe-stacks ",
+    	    "         --region ", { "Ref" : "AWS::Region" },
+          "         --stack-name ", { "Ref" : "AWS::StackName" },
+          "         --query 'Stacks[0].StackStatus')\n",
+          "if [[ \"$state\" == \"\\\"CREATE_IN_PROGRESS\\\"\" && \"$az\" != *a ]]; then \n",
+          "  sleep 6m\n",
+          "  # If we are restoring from a mysql dump while creating the stack, then allow extra time for the restore \n",
+          "  if [[ \"", { "Fn::GetAtt" : [ "DbProps", "db.mysql_database_dump" ] }, "\" != \"\" ]]; then \n",
+          "    sleep ", { "Fn::GetAtt" : [ "DbProps", "db.restore_sleep_time_minutes" ] }, "m\n",
+          "  fi\n",
+          "fi\n",
+
+
+          "# Run cfn-init\n",
+          "/opt/aws/bin/cfn-init -v ",
+          "         --stack ", { "Ref" : "AWS::StackName" },
+          "         --resource AlfrescoLaunchConfiguration ",
+          "         --region ", { "Ref" : "AWS::Region" }, "\n",
+
+          "# Signal success\n",
+          "/opt/aws/bin/cfn-signal -e $? ",
+          "         --stack ", { "Ref" : "AWS::StackName" },
+          "         --resource AlfrescoAutoscalingGroup ",
+          "         --region ", { "Ref" : "AWS::Region" }, "\n"
+        ]]}}
+      },
+      "Metadata" : {
+        "AWS::CloudFormation::Init" : {
+          "configSets" : {
+              "default" : [
+                "01-run-ansible",
+                "02-install-share",
+                "03-alfresco-config",
+                "04-verify-instance-health"
+              ]
+          },
+          "01-run-ansible": {
+            "sources" : {
+              "/tmp/ansible" : {
+                "Fn::Join" : [ "/", [{ "Fn::Join" : [ "", [ "https://s3-", { "Fn::If" : [ "AwsRegionUsEast1", "external-1", { "Ref" : "AWS::Region" }]}, ".amazonaws.com" ]]}, { "Ref" : "S3Bucket" }, { "Ref" : "S3BucketPathPrefix" }, "aaas-base/ansible.zip" ]]
+
+              }
+            },
+            "files" : {
+              "/tmp/ansible/aws_vars.yml" : {
+                "content" : { "Fn::Join" : [ "", [
+                  "---\n",
+                  "app_name: ", { "Ref" : "AppName" }, "\n",
+                  "aws_region: ", { "Ref" : "AWS::Region" }, "\n",
+                  "aws_env: ", { "Ref" : "AwsEnv" }, "\n",
+                  "app_env: ", { "Ref" : "AppEnv" }, "\n",
+                  "s3_bucket: ", { "Ref" : "S3Bucket" }, "\n",
+                  "sbu: ", { "Fn::GetAtt" : [ "MiscProps", "misc.support_market" ] }
+                ]]},
+                "mode"  : "000400",
+                "owner" : "root",
+                "group" : "root"
+              }
+            },
+            "commands": {
+              "run-ansible-playbook" : {
+                "command" : { "Fn::Join" : [ "", [ "ansible-playbook -v /tmp/ansible/main.yml -i /tmp/ansible/inventory/", { "Ref" : "AppEnv" }]]}
+              }
+            }
+          },
+          "02-install-share" : {
+            "files": {
+                "/opt/alfresco/install/bootstrap_share.sh" : {
+                  "source" : {
+                    "Fn::Join" : [ "/", [ { "Fn::Join" : [ "", [ "https://s3-", { "Fn::If" : [ "AwsRegionUsEast1", "external-1", { "Ref" : "AWS::Region" }]}, ".amazonaws.com" ]]}, { "Ref" : "S3Bucket" }, { "Ref" : "S3BucketPathPrefix" }, "aaas-base/scripts/bootstrap_share.sh.tpl" ]]
+                  },
+                  "context" : {
+                    "deploybucket"   			: { "Ref" : "S3Bucket" },
+                    "appname"        			: { "Ref" : "AppName" },
+                    "awsregion"				    : { "Ref" : "AWS::Region" },
+                    "supportmarket"             : { "Fn::GetAtt" : [ "MiscProps", "misc.support_market" ] },
+                    "appenv"    	  		 	: { "Ref" : "AppEnv" },
+                    "minheap"                   : { "Fn::If" : [ "IsIngestServer", { "Fn::GetAtt" : [ "IngestProps", "alfresco_ingest.share_min_heap_size" ] }, { "Fn::GetAtt" : [ "AlfrescoInstanceProps", "alfresco_instance.share_min_heap_size" ] } ] },
+                    "maxheap"                   : { "Fn::If" : [ "IsIngestServer", { "Fn::GetAtt" : [ "IngestProps", "alfresco_ingest.share_min_heap_size" ] }, { "Fn::GetAtt" : [ "AlfrescoInstanceProps", "alfresco_instance.share_max_heap_size" ] } ] },
+                    "gcCmsInitiatingOccupancyFraction" : { "Fn::If" : [ "IsIngestServer", { "Fn::GetAtt" : [ "IngestProps", "alfresco_ingest.share_gc_cms_initiating_occupancy_fraction" ] }, { "Fn::GetAtt" : [ "AlfrescoInstanceProps", "alfresco_instance.share_gc_cms_initiating_occupancy_fraction" ] } ] }
+                  },
+                  "mode"  : "000775",
+                  "owner" : "alfresco",
+                  "group" : "alfresco"
+                }
+              },
+              "commands" : {
+                "01-boostrap-share" : {
+                  "command" : { "Fn::Join" : [ " ", [ "/opt/alfresco/install/bootstrap_share.sh", " > /opt/alfresco/bootstrap_share.log 2>&1" ]]}
+                }
+              }
+          },
+          "03-alfresco-config" : {
+            "files": {
+              "/opt/alfresco/tomcat/apache-tomcat/shared/classes/alfresco-global.properties" : {
+                "source" : {
+                  "Fn::Join" : [ "/", [ { "Fn::Join" : [ "", [ "https://s3-", { "Fn::If" : [ "AwsRegionUsEast1", "external-1", { "Ref" : "AWS::Region" }]}, ".amazonaws.com" ]]}, { "Ref" : "S3Bucket" }, { "Ref" : "S3BucketPathPrefix" }, "aaas-base/config/alfresco-global.properties.tpl" ]]
+                },
+                "context" : {
+                  "s3bucket"   				: { "Ref" : "AlfrescoS3Bucket" },
+                  "accesskey"  				: {"Ref": "UserAccessKey"},
+                  "secretkey"  				: {"Ref": "UserSecretKey"},
+                  "awsregion"  				: { "Ref" : "AWS::Region" },
+                  "appenv"     				: { "Ref" : "AppEnv" },
+                  "dbhost"     				: { "Ref" : "DBHost" },
+                  "dbport"     				: { "Ref" : "DBPort" },
+                  "alfrescohost"  		: { "Fn::Join" : [ ".", [{ "Ref" : "AlfrescoUrl"}, "aws.sanotsh.com" ]]},
+                  "sharehost"  		  : { "Fn::Join" : [ "-", [{ "Ref" : "AlfrescoUrl" }, "share.aws.sanotsh.com" ]]},
+                  "solrhost"  		    : { "Fn::Join" : [ "-", [{ "Ref" : "AlfrescoUrl" }, "solr.aws.sanotsh.com" ]]},
+                  "appnametag"				: { "Ref" : "AppNameTag" },
+                  "alfrescoclusterenabled" : { "Fn::If" : [ "IsIngestServer", "false", "true" ] },
+                  "indexsubsystemname" : { "Fn::If" : [ "IsIngestServer", "noindex", "solr4" ] }
+                },
+                "mode"  : "000640",
+                "owner" : "alfresco",
+                "group" : "alfresco"
+              },
+              "/opt/alfresco/install/bootstrap_certs.sh" : {
+                "source" : {
+                  "Fn::Join" : [ "/", [ { "Fn::Join" : [ "", [ "https://s3-", { "Fn::If" : [ "AwsRegionUsEast1", "external-1", { "Ref" : "AWS::Region" }]}, ".amazonaws.com" ]]}, { "Ref" : "S3Bucket" }, { "Ref" : "S3BucketPathPrefix" }, "aaas-base/scripts/bootstrap_certs.sh.tpl" ]]
+                },
+                "context" : {
+                  "appenv"    	  		 	: { "Ref" : "AppEnv" },
+                  "awsregion"				: { "Ref" : "AWS::Region" },
+                  "nodetype"  				: "share",
+                  "appnametag"				: { "Ref" : "AppNameTag" },
+                  "supportmarket"           : { "Fn::GetAtt" : [ "MiscProps", "misc.support_market" ] }
+                },
+                "mode"  : "000770",
+                "owner" : "alfresco",
+                "group" : "alfresco"
+              },
+              "/opt/alfresco/install/bootstrap_amps.sh" : {
+                "source" : {
+                  "Fn::Join" : [ "/", [ { "Fn::Join" : [ "", [ "https://s3-", { "Fn::If" : [ "AwsRegionUsEast1", "external-1", { "Ref" : "AWS::Region" }]}, ".amazonaws.com" ]]}, { "Ref" : "S3Bucket" }, { "Ref" : "S3BucketPathPrefix" }, "aaas-base/scripts/bootstrap_amps.sh.tpl" ]]
+                },
+                "context" : {
+                  "deploybucket"   			: { "Ref" : "S3Bucket" },
+                  "appenv"    	  		 	: { "Ref" : "AppEnv" },
+                  "nodetype"  				: "share",
+                  "region"					: { "Ref" : "AWS::Region" },
+                  "stackName"				: { "Ref" : "AWS::StackName" },
+                  "ampsS3Path"      : { "Fn::Join" : [ "/", [ { "Ref" : "S3Bucket" }, { "Ref" : "S3BucketPathPrefix" }, "amps" ]] }
+                },
+                "mode"  : "000770",
+                "owner" : "alfresco",
+                "group" : "alfresco"
+              },
+              "/opt/alfresco/install/bootstrap_alfresco.sh" : {
+                "source" : {
+                  "Fn::Join" : [ "/", [ { "Fn::Join" : [ "", [ "https://s3-", { "Fn::If" : [ "AwsRegionUsEast1", "external-1", { "Ref" : "AWS::Region" }]}, ".amazonaws.com" ]]}, { "Ref" : "S3Bucket" }, { "Ref" : "S3BucketPathPrefix" }, "aaas-base/scripts/bootstrap_alfresco.sh.tpl" ]]
+                },
+                "context" : {
+                  "appname"        			: { "Ref" : "AppName" },
+                  "appenv"    	  		 	: { "Ref" : "AppEnv" },
+                  "appversion"    	  		: { "Ref" : "AppVersion" },
+                  "awsregion"				: { "Ref" : "AWS::Region" },
+                  "stackname"				: { "Ref" : "AWS::StackName" },
+                  "supportmarket"           : { "Fn::GetAtt" : [ "MiscProps", "misc.support_market" ] },
+                  "deploybucket"   			: { "Ref" : "S3Bucket" },
+                  "alfrescobucket" 			: { "Ref" : "AlfrescoS3Bucket" },
+                  "licenseS3Bucket"         : { "Ref" : "LicenseS3Bucket" },
+                  "mySqlDatabaseDumpFileName"       : { "Fn::GetAtt" : [ "DbProps", "db.mysql_database_dump" ] },
+                  "nodetype"  : "alfresco",
+                  "minheap"   : { "Fn::If" : [ "IsIngestServer", { "Fn::GetAtt" : [ "IngestProps", "alfresco_ingest.alfresco_min_heap_size" ] }, { "Fn::GetAtt" : [ "AlfrescoInstanceProps", "alfresco_instance.alfresco_min_heap_size" ] } ] },
+                  "maxheap"   : { "Fn::If" : [ "IsIngestServer", { "Fn::GetAtt" : [ "IngestProps", "alfresco_ingest.alfresco_max_heap_size" ] }, { "Fn::GetAtt" : [ "AlfrescoInstanceProps", "alfresco_instance.alfresco_max_heap_size" ] } ] },
+                  "gcCmsInitiatingOccupancyFraction" : { "Fn::If" : [ "IsIngestServer", { "Fn::GetAtt" : [ "IngestProps", "alfresco_ingest.alfresco_gc_cms_initiating_occupancy_fraction" ] }, { "Fn::GetAtt" : [ "AlfrescoInstanceProps", "alfresco_instance.alfresco_gc_cms_initiating_occupancy_fraction" ] } ] }
+                },
+                "mode"  : "000770",
+                "owner" : "alfresco",
+                "group" : "alfresco"
+              },
+              "/opt/alfresco/install/bootstrap_custom.sh" : {
+                "source" : {
+                  "Fn::Join" : [ "/", [ { "Fn::Join" : [ "", [ "https://s3-", { "Fn::If" : [ "AwsRegionUsEast1", "external-1", { "Ref" : "AWS::Region" }]}, ".amazonaws.com" ]]}, { "Ref" : "S3Bucket" }, { "Ref" : "S3BucketPathPrefix" }, "scripts/bootstrap_custom.sh.tpl" ]]
+                },
+                "context" : {
+                  "appname"        			: { "Ref" : "AppName" },
+                  "appnametag"                 : { "Ref" : "AppNameTag" },
+                  "appenv"    	  		 	: { "Ref" : "AppEnv" },
+                  "appversion"    	  	: { "Ref" : "AppVersion" },
+                  "awsregion"				    : { "Ref" : "AWS::Region" },
+                  "stackname"				    : { "Ref" : "AWS::StackName" },
+                  "supportmarket"           : { "Fn::GetAtt" : [ "MiscProps", "misc.support_market" ] },
+                  "alfrescoadminpassword"   : { "Ref" : "AlfrescoAdminPassword" },
+                  "alfrescoloadbalancer"    : { "Ref" : "AlfrescoLoadBalancer" },
+                  "deployBucketPath"      : { "Fn::Join" : [ "/", [ { "Ref" : "S3Bucket" }, { "Ref" : "S3BucketPathPrefix" } ]] },
+                  "nodetype"  : "alfresco",
+                  "alfrescobucket" : { "Ref" : "AlfrescoS3Bucket" },
+                  "accesskey" : {"Ref": "UserAccessKey"},
+                  "secretkey" : {"Ref": "UserSecretKey"},
+                  "dbhost" : { "Ref" : "DBHost" },
+                  "dbport" : { "Ref" : "DBPort" }
+                },
+                "mode"  : "000770",
+                "owner" : "alfresco",
+                "group" : "alfresco"
+              },
+              "/opt/alfresco/install/rds_bootstrap.sql" : {
+                "source" : {
+                  "Fn::Join" : [ "/", [ { "Fn::Join" : [ "", [ "https://s3-", { "Fn::If" : [ "AwsRegionUsEast1", "external-1", { "Ref" : "AWS::Region" }]}, ".amazonaws.com" ]]}, { "Ref" : "S3Bucket" }, { "Ref" : "S3BucketPathPrefix" }, "aaas-base/scripts/rds_bootstrap.sql.tpl" ]]
+                },
+                "context" : {
+                  "dbalfrescopass"			: { "Ref" : "DBAlfrescoPassword" }
+                },
+                "mode"  : "000660",
+                "owner" : "alfresco",
+                "group" : "alfresco"
+              },
+              "/opt/alfresco/alf_data/keystore/keys/sanotsh-root-cert.pem" : {
+                "source" : {
+                  "Fn::Join" : [ "/", [ { "Fn::Join" : [ "", [ "https://s3-", { "Fn::If" : [ "AwsRegionUsEast1", "external-1", { "Ref" : "AWS::Region" }]}, ".amazonaws.com" ]]}, { "Ref" : "S3Bucket" }, { "Ref" : "S3BucketPathPrefix" }, "aaas-base/config/keys/sanotsh-root-cert.pem" ]]
+                },
+                "mode"  : "000660",
+                "owner" : "alfresco",
+                "group" : "alfresco"
+             },
+             "/opt/alfresco/alf_data/keystore/keys/MS-CA-root.crt" : {
+              "source" : {
+                "Fn::Join" : [ "/", [ { "Fn::Join" : [ "", [ "https://s3-", { "Fn::If" : [ "AwsRegionUsEast1", "external-1", { "Ref" : "AWS::Region" }]}, ".amazonaws.com" ]]}, { "Ref" : "S3Bucket" }, { "Ref" : "S3BucketPathPrefix" }, "aaas-base/config/keys/MS-CA-root.crt" ]]
+              },
+              "mode"  : "000660",
+              "owner" : "alfresco",
+              "group" : "alfresco"
+             },
+             "/opt/alfresco/alf_data/keystore/keys/MS-CA-intermediate.crt" : {
+              "source" : {
+                "Fn::Join" : [ "/", [ { "Fn::Join" : [ "", [ "https://s3-", { "Fn::If" : [ "AwsRegionUsEast1", "external-1", { "Ref" : "AWS::Region" }]}, ".amazonaws.com" ]]}, { "Ref" : "S3Bucket" }, { "Ref" : "S3BucketPathPrefix" }, "aaas-base/config/keys/MS-CA-intermediate.crt" ]]
+              },
+              "mode"  : "000660",
+              "owner" : "alfresco",
+              "group" : "alfresco"
+             },
+             "/opt/alfresco/alf_data/keystore/keys/rds-combined-ca-bundle.pem" : {
+                "source" : {
+                  "Fn::Join" : [ "/", [ { "Fn::Join" : [ "", [ "https://s3-", { "Fn::If" : [ "AwsRegionUsEast1", "external-1", { "Ref" : "AWS::Region" }]}, ".amazonaws.com" ]]}, { "Ref" : "S3Bucket" }, { "Ref" : "S3BucketPathPrefix" }, "aaas-base/config/keys/rds-combined-ca-bundle.pem" ]]
+                },
+                "mode"  : "000660",
+                "owner" : "alfresco",
+                "group" : "alfresco"
+             },
+             "/opt/alfresco/alf_data/keystore/keys/rds-ssl-ca-cert.pem" : {
+                "source" : {
+                  "Fn::Join" : [ "/", [ { "Fn::Join" : [ "", [ "https://s3-", { "Fn::If" : [ "AwsRegionUsEast1", "external-1", { "Ref" : "AWS::Region" }]}, ".amazonaws.com" ]]}, { "Ref" : "S3Bucket" }, { "Ref" : "S3BucketPathPrefix" }, "aaas-base/config/keys/rds-ssl-ca-cert.pem" ]]
+                },
+                "mode"  : "000660",
+                "owner" : "alfresco",
+                "group" : "alfresco"
+              },
+              "/opt/alfresco/alf_data/keystore/keys/VeriSignRoot.cer" : {
+                "source" : {
+                  "Fn::Join" : [ "/", [ { "Fn::Join" : [ "", [ "https://s3-", { "Fn::If" : [ "AwsRegionUsEast1", "external-1", { "Ref" : "AWS::Region" }]}, ".amazonaws.com" ]]}, { "Ref" : "S3Bucket" }, { "Ref" : "S3BucketPathPrefix" }, "aaas-base/config/keys/VeriSignRoot.cer" ]]
+                },
+                "mode"  : "000660",
+                "owner" : "alfresco",
+                "group" : "alfresco"
+              },
+              "/opt/alfresco/alf_data/keystore/keys/SymantecIntermediate.cer" : {
+                "source" : {
+                  "Fn::Join" : [ "/", [ { "Fn::Join" : [ "", [ "https://s3-", { "Fn::If" : [ "AwsRegionUsEast1", "external-1", { "Ref" : "AWS::Region" }]}, ".amazonaws.com" ]]}, { "Ref" : "S3Bucket" }, { "Ref" : "S3BucketPathPrefix" }, "aaas-base/config/keys/SymantecIntermediate.cer" ]]
+                },
+                "mode"  : "000660",
+                "owner" : "alfresco",
+                "group" : "alfresco"
+              },
+              "/opt/alfresco/install/apply-keys.sh" : {
+                "source" : {
+                  "Fn::Join" : [ "/", [ { "Fn::Join" : [ "", [ "https://s3-", { "Fn::If" : [ "AwsRegionUsEast1", "external-1", { "Ref" : "AWS::Region" }]}, ".amazonaws.com" ]]}, { "Ref" : "S3Bucket" }, { "Ref" : "S3BucketPathPrefix" }, "aaas-base/scripts/apply-keys.sh.tpl" ]]
+                },
+                "mode"  : "000770",
+                "owner" : "alfresco",
+                "group" : "alfresco"
+              },
+              "/opt/alfresco/tomcat/apache-tomcat/shared/classes/alfresco/web-extension/custom-slingshot-application-context.xml" : {
+                "source" : {
+                  "Fn::Join" : [ "/", [ { "Fn::Join" : [ "", [ "https://s3-", { "Fn::If" : [ "AwsRegionUsEast1", "external-1", { "Ref" : "AWS::Region" }]}, ".amazonaws.com" ]]}, { "Ref" : "S3Bucket" }, { "Ref" : "S3BucketPathPrefix" }, "aaas-base/config/custom-slingshot-application-context.xml.tpl" ]]
+                },
+                "context" : {
+                  "awsregion" : { "Ref" : "AWS::Region" },
+                  "appenv" 	  : { "Ref" : "AppEnv" }
+                },
+                "mode"  : "000640",
+                "owner" : "alfresco",
+                "group" : "alfresco"
+              },
+              "/opt/alfresco/tomcat/apache-tomcat/newrelic/newrelic.yml" : {
+                "source" : {
+                  "Fn::Join" : [ "/", [ { "Fn::Join" : [ "", [ "https://s3-", { "Fn::If" : [ "AwsRegionUsEast1", "external-1", { "Ref" : "AWS::Region" }]}, ".amazonaws.com" ]]}, { "Ref" : "S3Bucket" }, { "Ref" : "S3BucketPathPrefix" }, "aaas-base/tools/newrelic/newrelic.yml.tpl" ]]
+                },
+                "context" : {
+                  "newrelicappname" : { "Ref" : "NewRelicAppName" },
+                  "appname"   : { "Ref" : "AppName" },
+                  "appenv"    : { "Ref" : "AppEnv" },
+                  "awsregion" : { "Ref" : "AWS::Region" }
+                },
+                "mode"  : "000640",
+                "owner" : "alfresco",
+                "group" : "alfresco"
+              }
+
+            },
+            "commands" : {
+              "01-apply-keys" : {
+                "command" : { "Fn::Join" : [ " ", [ "/opt/alfresco/install/apply-keys.sh", { "Ref" : "KeystorePassword" }, " > /opt/alfresco/keystore_alfresco.log 2>&1" ]]}
+              },
+              "02-cert-bootstrap" : {
+                "command" : { "Fn::Join" : [ " ", [ "/opt/alfresco/install/bootstrap_certs.sh", " > /opt/alfresco/bootstrap_certs.log 2>&1" ]]}
+              },
+              "03-amp-bootstrap" : {
+                "command" : { "Fn::Join" : [ " ", [ "/opt/alfresco/install/bootstrap_amps.sh", " > /opt/alfresco/bootstrap_amps.log 2>&1" ]]}
+              },
+              "04-custom-bootstrap" : {
+                "command" : { "Fn::Join" : [ " ", [ "/opt/alfresco/install/bootstrap_custom.sh", " > /opt/alfresco/bootstrap_custom.log 2>&1" ]]}
+              },
+              "05-alfresco-bootstrap" : {
+                "command" : { "Fn::Join" : [ " ", [ "/opt/alfresco/install/bootstrap_alfresco.sh", { "Ref" : "DBHost" }, { "Ref" : "DBPort" }, { "Fn::GetAtt" : [ "DbProps", "db.master_username" ] }, { "Ref" : "DBMasterPassword" }, { "Ref" : "AlfrescoAdminPassword" }, { "Ref" : "DBAlfrescoPassword" }, " > /opt/alfresco/bootstrap_alfresco.log 2>&1" ]]}
+              }
+            }
+          },
+          "04-verify-instance-health" : {
+            "commands" : {
+              "01-elb-health-check" : {
+                "command" : { "Fn::Join" : [ "", [
+                  "until [ \"$state\" == \"\\\"InService\\\"\" ]; do ",
+                  "  state=$(/usr/local/bin/aws --region ", { "Ref" : "AWS::Region" }, " elb describe-instance-health ",
+                  "              --load-balancer-name ", { "Ref" : "AlfrescoLoadBalancer" },
+                  "              --instances $(curl -s http://169.254.169.254/latest/meta-data/instance-id) ",
+                  "              --query InstanceStates[0].State); ",
+                  "  sleep 10; ",
+                  "done"
+                ]]}
+              },
+              "02-elb-health-check" : {
+                "command" : { "Fn::Join" : [ "", [
+                  "until [ \"$state\" == \"\\\"InService\\\"\" ]; do ",
+                  "  state=$(/usr/local/bin/aws --region ", { "Ref" : "AWS::Region" }, " elb describe-instance-health ",
+                  "              --load-balancer-name ", { "Ref" : "AlfrescoShareLoadBalancer" },
+                  "              --instances $(curl -s http://169.254.169.254/latest/meta-data/instance-id) ",
+                  "              --query InstanceStates[0].State); ",
+                  "  sleep 10; ",
+                  "done"
+                ]]}
+              }
+            }
+          }
+
+        },
+        "AWS::CloudFormation::Authentication": {
+          "S3AccessCreds" : {
+            "type": "s3",
+            "buckets": [{ "Ref" : "S3Bucket" }],
+            "roleName": { "Ref" : "InstanceProfileRole" }
+          }
+        }
+      }
+    },
+
+    "AlfrescoAutoscalingGroup" : {
+      "Type" : "AWS::AutoScaling::AutoScalingGroup",
+      "CreationPolicy" : {
+        "ResourceSignal" : {
+          "Timeout" : { "Fn::GetAtt" : [ "AlfrescoAsgProps", "alfresco_asg.creation_policy.timeout" ] },
+          "Count"   : "1"
+        }
+      },
+      "UpdatePolicy" : {
+        "AutoScalingRollingUpdate" : {
+          "MinInstancesInService" : { "Fn::If" : [ "IsIngestServer", { "Fn::GetAtt" : [ "IngestAsgProps", "alfresco_ingest_asg.update_policy.min_instances_in_service" ] },{ "Fn::GetAtt" : [ "AlfrescoAsgProps", "alfresco_asg.update_policy.min_instances_in_service" ] } ] },
+          "MaxBatchSize" : { "Fn::If" : [ "IsIngestServer", { "Fn::GetAtt" : [ "IngestAsgProps", "alfresco_ingest_asg.update_policy.max_batch_size" ] },{ "Fn::GetAtt" : [ "AlfrescoAsgProps", "alfresco_asg.update_policy.max_batch_size" ] } ] },
+          "PauseTime" : { "Fn::GetAtt" : [ "AlfrescoAsgProps", "alfresco_asg.update_policy.pause_time" ] },
+          "SuspendProcesses": ["ScheduledActions","HealthCheck","ReplaceUnhealthy","AZRebalance","AlarmNotification"],
+          "WaitOnResourceSignals" : "true"
+        }
+      },
+      "Properties" : {
+        "MinSize" : { "Fn::If" : [ "IsIngestServer", { "Fn::GetAtt" : [ "IngestAsgProps", "alfresco_ingest_asg.min_size" ] }, { "Fn::GetAtt" : [ "AlfrescoAsgProps", "alfresco_asg.min_size" ] } ] },
+        "MaxSize" : { "Fn::If" : [ "IsIngestServer", { "Fn::GetAtt" : [ "IngestAsgProps", "alfresco_ingest_asg.max_size" ] }, { "Fn::GetAtt" : [ "AlfrescoAsgProps", "alfresco_asg.max_size" ] } ] },
+        "DesiredCapacity" : { "Fn::If" : [ "IsIngestServer", { "Fn::GetAtt" : [ "IngestAsgProps", "alfresco_ingest_asg.desired_size" ] }, { "Fn::GetAtt" : [ "AlfrescoAsgProps", "alfresco_asg.desired_size" ] } ] },
+        "HealthCheckType" : "ELB",
+        "HealthCheckGracePeriod" : { "Fn::GetAtt" : [ "AlfrescoAsgProps", "alfresco_asg.health_check_grace_period" ] },
+        "LaunchConfigurationName" : { "Ref" : "AlfrescoLaunchConfiguration" },
+        "LoadBalancerNames" : [{ "Ref" : "AlfrescoLoadBalancer" }, { "Ref" : "AlfrescoShareLoadBalancer" }],
+        "VPCZoneIdentifier" : [
+          { "Ref" : "AlfrescoSubnetAZa" },
+          { "Ref" : "AlfrescoSubnetAZb" }
+        ],
+        "Tags" : [
+          { "Key" : "Name", "Value" : { "Fn::Join" : [ "-", [{ "Ref" : "AppName" }, { "Ref" : "AppEnv" }]]}, "PropagateAtLaunch" : "true" },
+          { "Key" : "lm_app", "Value": { "Ref" : "AppNameTag" }, "PropagateAtLaunch" : "true" },
+          { "Key" : "lm_troux_uid", "Value": { "Fn::GetAtt" : [ "MiscProps", "misc.troux_uid" ] }, "PropagateAtLaunch" : "true" },
+          { "Key" : "lm_applicationsupportemail", "Value": { "Fn::GetAtt" : [ "MiscProps", "misc.support_email" ] }, "PropagateAtLaunch" : "true" },
+          { "Key" : "lm_sbu", "Value": { "Fn::GetAtt" : [ "MiscProps", "misc.support_market" ] }, "PropagateAtLaunch" : "true" },
+          { "Key" : "lm_app_env", "Value": { "Ref" : "AppEnv" }, "PropagateAtLaunch" : "true" }
+        ]
+      }
+    },
+
+    "AlfrescoStopInstances" : {
+      "Type" : "AWS::AutoScaling::ScheduledAction",
+      "Condition" : "AwsEnvSandbox",
+      "Properties" : {
+        "AutoScalingGroupName" : { "Ref" : "AlfrescoAutoscalingGroup" },
+        "MaxSize" : "0",
+        "MinSize" : "0",
+        "DesiredCapacity" : "0",
+        "Recurrence": "0 2 * * TUE-SAT"
+      }
+    },
+    "AlfrescoStartInstances" : {
+      "Type" : "AWS::AutoScaling::ScheduledAction",
+      "Condition" : "AwsEnvSandbox",
+      "Properties" : {
+        "AutoScalingGroupName" : { "Ref" : "AlfrescoAutoscalingGroup" },
+        "MinSize" : { "Fn::If" : [ "IsIngestServer", { "Fn::GetAtt" : [ "IngestAsgProps", "alfresco_ingest_asg.min_size" ] }, { "Fn::GetAtt" : [ "AlfrescoAsgProps", "alfresco_asg.min_size" ] } ] },
+        "MaxSize" : { "Fn::If" : [ "IsIngestServer", { "Fn::GetAtt" : [ "IngestAsgProps", "alfresco_ingest_asg.max_size" ] }, { "Fn::GetAtt" : [ "AlfrescoAsgProps", "alfresco_asg.max_size" ] } ] },
+        "DesiredCapacity" : { "Fn::If" : [ "IsIngestServer", { "Fn::GetAtt" : [ "IngestAsgProps", "alfresco_ingest_asg.desired_size" ] }, { "Fn::GetAtt" : [ "AlfrescoAsgProps", "alfresco_asg.desired_size" ] } ] },
+        "Recurrence": "0 7 * * MON-FRI"
+      }
+    },
+
+    "AlfrescoScaleUpPolicy" : {
+      "Type" : "AWS::AutoScaling::ScalingPolicy",
+      "Condition" : "NotAwsEnvSandbox",
+      "Properties" : {
+        "AdjustmentType" : "ChangeInCapacity",
+        "AutoScalingGroupName" : { "Ref" : "AlfrescoAutoscalingGroup" },
+        "Cooldown" : "1200",
+        "ScalingAdjustment" : "1"
+      }
+    },
+
+    "AlfrescoScaleDownPolicy" : {
+      "Type" : "AWS::AutoScaling::ScalingPolicy",
+      "Condition" : "NotAwsEnvSandbox",
+      "Properties" : {
+        "AdjustmentType" : "ChangeInCapacity",
+        "AutoScalingGroupName" : { "Ref" : "AlfrescoAutoscalingGroup" },
+        "Cooldown" : "300",
+        "ScalingAdjustment" : "-1"
+      }
+    },
+
+    "AlfrescoCPUAlarmHigh": {
+      "Type": "AWS::CloudWatch::Alarm",
+      "Condition" : "NotAwsEnvSandbox",
+      "Properties": {
+        "AlarmDescription": "Scale-up if CPU > 65% for 10 minutes",
+        "MetricName": "CPUUtilization",
+        "EvaluationPeriods": "2",
+        "Statistic": "Average",
+        "Threshold": "65",
+        "Period": "300",
+        "AlarmActions": [ { "Ref": "AlfrescoScaleUpPolicy" } ],
+        "Namespace": "AWS/EC2",
+        "Dimensions": [ {
+          "Name": "AutoScalingGroupName",
+          "Value": { "Ref": "AlfrescoAutoscalingGroup" }
+        } ],
+      "ComparisonOperator": "GreaterThanThreshold"
+      }
+    },
+
+    "AlfrescoCPUAlarmLow": {
+      "Type": "AWS::CloudWatch::Alarm",
+      "Condition" : "NotAwsEnvSandbox",
+      "Properties": {
+        "AlarmDescription": "Scale-down if CPU < 40% for 10 minutes",
+        "MetricName": "CPUUtilization",
+        "EvaluationPeriods": "2",
+        "Statistic": "Average",
+        "Threshold": "40",
+        "Period": "300",
+        "AlarmActions": [ { "Ref": "AlfrescoScaleDownPolicy" } ],
+        "Namespace": "AWS/EC2",
+        "Dimensions": [ {
+          "Name": "AutoScalingGroupName",
+          "Value": { "Ref": "AlfrescoAutoscalingGroup" }
+        } ],
+      "ComparisonOperator": "LessThanThreshold"
+      }
+    },
+
+    "AlfrescoELBSG" : {
+      "Type" : "AWS::EC2::SecurityGroup",
+      "Properties" : {
+        "GroupDescription" : {
+          "Fn::Join" : [ " ", [{ "Ref" : "AppName" }, { "Ref" : "AppEnv" }, "elb security group" ]]
+        },
+        "VpcId" : { "Ref" : "VPC" },
+        "SecurityGroupIngress" : [
+          {
+            "IpProtocol" : "tcp",
+            "FromPort" : "443",
+            "ToPort" : "443",
+            "CidrIp" : "0.0.0.0/0"
+          },
+          {
+            "Fn::If" : [
+               "NoOpenPort",
+               {"Ref" : "AWS::NoValue"},
+               {
+                 "IpProtocol": "tcp",
+                 "FromPort": { "Ref" : "AlfrescoOpenPort" },
+                 "ToPort": { "Ref" : "AlfrescoOpenPort" },
+                 "CidrIp": "0.0.0.0/0"
+               }
+             ]
+           }
+        ],
+        "Tags" : [
+          { "Key" : "Name", "Value": { "Fn::Join" : [ "-", [{ "Ref" : "AppName" }, { "Ref" : "AppEnv" }, "elb" ]]}},
+          { "Key" : "lm_app", "Value": { "Ref" : "AppNameTag" }},
+          { "Key" : "lm_applicationsupportemail", "Value": { "Fn::GetAtt" : [ "MiscProps", "misc.support_email" ] }},
+          { "Key" : "lm_sbu", "Value": { "Fn::GetAtt" : [ "MiscProps", "misc.support_market" ] }},
+          { "Key" : "lm_app_env", "Value": { "Ref" : "AppEnv" }}
+        ]
+      }
+    },
+
+    "AlfrescoAppSG" : {
+      "Type" : "AWS::EC2::SecurityGroup",
+      "Properties" : {
+        "GroupDescription" : {
+          "Fn::Join" : [ " ", [{ "Ref" : "AppName" }, { "Ref" : "AppEnv" }, "app security group" ]]
+        },
+        "VpcId" : { "Ref" : "VPC" },
+        "SecurityGroupIngress" : [
+          {
+            "IpProtocol" : "tcp",
+            "FromPort" : "8443",
+            "ToPort" : "8443",
+            "SourceSecurityGroupId" : { "Ref" : "AlfrescoELBSG" }
+          },
+          {
+            "IpProtocol" : "tcp",
+            "FromPort" : "8444",
+            "ToPort" : "8444",
+            "SourceSecurityGroupId" : { "Ref" : "AlfrescoELBSG" }
+          },
+          {
+            "IpProtocol": "tcp",
+            "FromPort": "22",
+            "ToPort": "22",
+            "CidrIp": "0.0.0.0/0"
+          },
+          {
+            "IpProtocol": "tcp",
+            "FromPort": "443",
+            "ToPort": "443",
+            "CidrIp": "0.0.0.0/0"
+          },
+          {
+            "Fn::If" : [
+               "NoOpenPort",
+               {"Ref" : "AWS::NoValue"},
+               {
+                 "IpProtocol": "tcp",
+                 "FromPort": { "Ref" : "AlfrescoOpenPort" },
+                 "ToPort": { "Ref" : "AlfrescoOpenPort" },
+                 "SourceSecurityGroupId" : { "Ref" : "AlfrescoELBSG" }
+               }
+             ]
+           }
+        ],
+        "Tags" : [
+          { "Key" : "Name", "Value": { "Fn::Join" : [ "-", [{ "Ref" : "AppName" }, { "Ref" : "AppEnv" }, "app" ]]}},
+          { "Key" : "lm_app", "Value": { "Ref" : "AppNameTag" }},
+          { "Key" : "lm_applicationsupportemail", "Value": { "Fn::GetAtt" : [ "MiscProps", "misc.support_email" ] }},
+          { "Key" : "lm_sbu", "Value": { "Fn::GetAtt" : [ "MiscProps", "misc.support_market" ] }},
+          { "Key" : "lm_app_env", "Value": { "Ref" : "AppEnv" }}
+        ]
+      }
+    },
+    "AlfrescoClusterSecurityGroupIngress": {
+      "Type": "AWS::EC2::SecurityGroupIngress",
+      "Properties": {
+        "GroupId": { "Ref": "AlfrescoAppSG" },
+        "IpProtocol": "tcp",
+        "FromPort": "5700",
+        "ToPort": "65535",
+        "SourceSecurityGroupId": { "Ref": "AlfrescoAppSG" }
+      }
+    },
+
+
+    "AlfrescoRDSSGRule": {
+      "Type": "AWS::EC2::SecurityGroupIngress",
+      "Properties": {
+        "GroupId": { "Ref": "AlfrescoRDSSG" },
+        "IpProtocol": "tcp",
+        "FromPort": { "Ref" : "DBPort" },
+        "ToPort": { "Ref" : "DBPort" },
+        "SourceSecurityGroupId": { "Ref": "AlfrescoAppSG" }
+      }
+    },
+
+    "ElbCname" : {
+      "Type" : "Custom::ResourceDNS",
+      "Condition" : "UseDNS",
+      "Version" : "1.0",
+      "Properties" : {
+        "ServiceToken" : { "Fn::Join" : [ ":", [ "arn:aws:sns", { "Ref" : "AWS::Region" }, "571458333875:custom-resource" ]]},
+        "Resource" : "CNAME",
+        "CNAME" : { "Fn::Join" : [ ".", [{ "Ref" : "AlfrescoUrl"}, "aws.sanotsh.com" ]]},
+        "ElbDnsName" : { "Fn::GetAtt" : [ "AlfrescoLoadBalancer", "DNSName" ]}
+      }
+    },
+    "ShareElbCname" : {
+      "Type" : "Custom::ResourceDNS",
+      "Condition" : "UseDNS",
+      "Version" : "1.0",
+      "Properties" : {
+        "ServiceToken" : { "Fn::Join" : [ ":", [ "arn:aws:sns", { "Ref" : "AWS::Region" }, "571458333875:custom-resource" ]]},
+        "Resource" : "CNAME",
+        "CNAME": { "Fn::Join" : [ "-", [{ "Ref" : "AlfrescoUrl" }, "share.aws.sanotsh.com" ]]},
+        "ElbDnsName" : { "Fn::GetAtt" : [ "AlfrescoShareLoadBalancer", "DNSName" ]}
+      }
+    },
+
+    "MiscProps" : {
+      "Type" : "Custom::PropertiesLookup",
+      "Properties" : {
+        "ServiceToken" : { "Ref" : "LookupEnvironmentPropertiesLambdaArn" },
+        "PropertyPrefix" : "misc",
+        "PropertyFileS3Bucket" : { "Ref" : "S3Bucket" },
+        "HsaeDefaultPropertyFileKey" : { "Fn::Join" : [ "", [ { "Ref" : "S3BucketPathPrefix" }, "/aaas-base/config/default.properties" ] ] },
+        "MarketDefaultPropertyFileKey" : { "Fn::Join" : [ "", [ { "Ref" : "S3BucketPathPrefix" }, "/config/default.properties" ] ] },
+        "EnvironmentPropertyFileKey" : { "Fn::Join" : [ "", [ { "Ref" : "S3BucketPathPrefix" }, "/config/", { "Ref" : "AppEnv" }, "-", { "Ref" : "AWS::Region" }, ".properties" ] ] }
+      }
+    },
+
+    "AlfrescoRepoElbProps" : {
+      "Type" : "Custom::PropertiesLookup",
+      "Properties" : {
+        "ServiceToken" : { "Ref" : "LookupEnvironmentPropertiesLambdaArn" },
+        "PropertyPrefix" : "alfresco_repo_elb",
+        "PropertyFileS3Bucket" : { "Ref" : "S3Bucket" },
+        "HsaeDefaultPropertyFileKey" : { "Fn::Join" : [ "", [ { "Ref" : "S3BucketPathPrefix" }, "/aaas-base/config/default.properties" ] ] },
+        "MarketDefaultPropertyFileKey" : { "Fn::Join" : [ "", [ { "Ref" : "S3BucketPathPrefix" }, "/config/default.properties" ] ] },
+        "EnvironmentPropertyFileKey" : { "Fn::Join" : [ "", [ { "Ref" : "S3BucketPathPrefix" }, "/config/", { "Ref" : "AppEnv" }, "-", { "Ref" : "AWS::Region" }, ".properties" ] ] }
+      }
+    },
+
+    "AlfrescoShareElbProps" : {
+      "Type" : "Custom::PropertiesLookup",
+      "Properties" : {
+        "ServiceToken" : { "Ref" : "LookupEnvironmentPropertiesLambdaArn" },
+        "PropertyPrefix" : "alfresco_share_elb",
+        "PropertyFileS3Bucket" : { "Ref" : "S3Bucket" },
+        "HsaeDefaultPropertyFileKey" : { "Fn::Join" : [ "", [ { "Ref" : "S3BucketPathPrefix" }, "/aaas-base/config/default.properties" ] ] },
+        "MarketDefaultPropertyFileKey" : { "Fn::Join" : [ "", [ { "Ref" : "S3BucketPathPrefix" }, "/config/default.properties" ] ] },
+        "EnvironmentPropertyFileKey" : { "Fn::Join" : [ "", [ { "Ref" : "S3BucketPathPrefix" }, "/config/", { "Ref" : "AppEnv" }, "-", { "Ref" : "AWS::Region" }, ".properties" ] ] }
+      }
+    },
+
+    "AlfrescoInstanceProps" : {
+      "Type" : "Custom::PropertiesLookup",
+      "Properties" : {
+        "ServiceToken" : { "Ref" : "LookupEnvironmentPropertiesLambdaArn" },
+        "PropertyPrefix" : "alfresco_instance",
+        "PropertyFileS3Bucket" : { "Ref" : "S3Bucket" },
+        "HsaeDefaultPropertyFileKey" : { "Fn::Join" : [ "", [ { "Ref" : "S3BucketPathPrefix" }, "/aaas-base/config/default.properties" ] ] },
+        "MarketDefaultPropertyFileKey" : { "Fn::Join" : [ "", [ { "Ref" : "S3BucketPathPrefix" }, "/config/default.properties" ] ] },
+        "EnvironmentPropertyFileKey" : { "Fn::Join" : [ "", [ { "Ref" : "S3BucketPathPrefix" }, "/config/", { "Ref" : "AppEnv" }, "-", { "Ref" : "AWS::Region" }, ".properties" ] ] }
+      }
+    },
+
+    "AlfrescoAsgProps" : {
+      "Type" : "Custom::PropertiesLookup",
+      "Properties" : {
+        "ServiceToken" : { "Ref" : "LookupEnvironmentPropertiesLambdaArn" },
+        "PropertyPrefix" : "alfresco_asg",
+        "PropertyFileS3Bucket" : { "Ref" : "S3Bucket" },
+        "HsaeDefaultPropertyFileKey" : { "Fn::Join" : [ "", [ { "Ref" : "S3BucketPathPrefix" }, "/aaas-base/config/default.properties" ] ] },
+        "MarketDefaultPropertyFileKey" : { "Fn::Join" : [ "", [ { "Ref" : "S3BucketPathPrefix" }, "/config/default.properties" ] ] },
+        "EnvironmentPropertyFileKey" : { "Fn::Join" : [ "", [ { "Ref" : "S3BucketPathPrefix" }, "/config/", { "Ref" : "AppEnv" }, "-", { "Ref" : "AWS::Region" }, ".properties" ] ] }
+      }
+    },
+
+    "IngestProps" : {
+      "Type" : "Custom::PropertiesLookup",
+      "Properties" : {
+        "ServiceToken" : { "Ref" : "LookupEnvironmentPropertiesLambdaArn" },
+        "PropertyPrefix" : "alfresco_ingest",
+        "PropertyFileS3Bucket" : { "Ref" : "S3Bucket" },
+        "HsaeDefaultPropertyFileKey" : { "Fn::Join" : [ "", [ { "Ref" : "S3BucketPathPrefix" }, "/aaas-base/config/default.properties" ] ] },
+        "MarketDefaultPropertyFileKey" : { "Fn::Join" : [ "", [ { "Ref" : "S3BucketPathPrefix" }, "/config/default.properties" ] ] },
+        "EnvironmentPropertyFileKey" : { "Fn::Join" : [ "", [ { "Ref" : "S3BucketPathPrefix" }, "/config/", { "Ref" : "AppEnv" }, "-", { "Ref" : "AWS::Region" }, ".properties" ] ] }
+      }
+    },
+
+    "IngestAsgProps" : {
+      "Type" : "Custom::PropertiesLookup",
+      "Properties" : {
+        "ServiceToken" : { "Ref" : "LookupEnvironmentPropertiesLambdaArn" },
+        "PropertyPrefix" : "alfresco_ingest_asg",
+        "PropertyFileS3Bucket" : { "Ref" : "S3Bucket" },
+        "HsaeDefaultPropertyFileKey" : { "Fn::Join" : [ "", [ { "Ref" : "S3BucketPathPrefix" }, "/aaas-base/config/default.properties" ] ] },
+        "MarketDefaultPropertyFileKey" : { "Fn::Join" : [ "", [ { "Ref" : "S3BucketPathPrefix" }, "/config/default.properties" ] ] },
+        "EnvironmentPropertyFileKey" : { "Fn::Join" : [ "", [ { "Ref" : "S3BucketPathPrefix" }, "/config/", { "Ref" : "AppEnv" }, "-", { "Ref" : "AWS::Region" }, ".properties" ] ] }
+      }
+    },
+
+    "DbProps" : {
+      "Type" : "Custom::PropertiesLookup",
+      "Properties" : {
+        "ServiceToken" : { "Ref" : "LookupEnvironmentPropertiesLambdaArn" },
+        "PropertyPrefix" : "db",
+        "PropertyFileS3Bucket" : { "Ref" : "S3Bucket" },
+        "HsaeDefaultPropertyFileKey" : { "Fn::Join" : [ "", [ { "Ref" : "S3BucketPathPrefix" }, "/aaas-base/config/default.properties" ] ] },
+        "MarketDefaultPropertyFileKey" : { "Fn::Join" : [ "", [ { "Ref" : "S3BucketPathPrefix" }, "/config/default.properties" ] ] },
+        "EnvironmentPropertyFileKey" : { "Fn::Join" : [ "", [ { "Ref" : "S3BucketPathPrefix" }, "/config/", { "Ref" : "AppEnv" }, "-", { "Ref" : "AWS::Region" }, ".properties" ] ] }
+      }
+    }
+  },
+
+  "Outputs" : {
+    "AlfrescoDNSName" : {
+      "Condition" : "UseDNS",
+      "Description" : "DNS CNAME of Alfresco ELB",
+      "Value" : { "Ref" : "ElbCname" }
+    },
+    "AlfrescoShareDNSName" : {
+      "Condition" : "UseDNS",
+      "Description" : "DNS CNAME of Alfresco Share ELB",
+      "Value" : { "Ref" : "ShareElbCname" }
+    },
+    "AlfrescoAppSG" : {
+      "Description" : "Security group for Alfresco and Share TC instances",
+      "Value" : { "Ref" : "AlfrescoAppSG" }
+    }
+  }
+}
